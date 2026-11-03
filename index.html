@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#090909">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Calculadora Oro">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<title>Calculadora de Oro</title>
+<style>
+:root{color-scheme:dark;--gold:#d6b45c;--bg:#090909;--panel:#171717;--muted:#a6a6a6;--line:#333}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:env(safe-area-inset-top) 16px calc(24px + env(safe-area-inset-bottom));}
+main{max-width:680px;margin:0 auto}.top{padding:26px 4px 18px;text-align:center}.mark{width:58px;height:58px;margin:auto;border:2px solid var(--gold);border-radius:50%;display:grid;place-items:center;color:var(--gold);font-size:27px;font-weight:800}.top h1{font-size:25px;margin:12px 0 4px}.sub{color:var(--muted);font-size:13px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:17px;margin:13px 0}.label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}.spot{font-size:34px;font-weight:800;color:var(--gold);margin:7px 0}.small{font-size:12px;color:var(--muted);line-height:1.5}.status{display:inline-flex;align-items:center;gap:7px;font-size:12px;margin-top:7px}.dot{width:8px;height:8px;border-radius:50%;background:#e2b94e}.dot.ok{background:#47c878}.dot.bad{background:#ed665b}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field label{display:block;color:var(--muted);font-size:13px;margin-bottom:7px}.field input,.field select{width:100%;border:1px solid #484848;background:#0c0c0c;color:white;border-radius:10px;padding:13px;font-size:17px;min-height:48px}
+.result{font-size:31px;font-weight:800;color:var(--gold);margin:9px 0}.btn{background:var(--gold);color:#17130a;border:0;border-radius:10px;padding:12px 16px;font-weight:800;font-size:14px}.tablewrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:14px}td,th{text-align:right;padding:9px 5px;border-bottom:1px solid var(--line);white-space:nowrap}td:first-child,th:first-child{text-align:left}th{color:var(--muted);font-weight:600}.active td{color:var(--gold);font-weight:800}.foot{text-align:center;color:var(--muted);font-size:11px;padding:16px}
+@media(max-width:370px){.grid{grid-template-columns:1fr}.spot{font-size:29px}}
+</style>
+</head>
+<body><main>
+<header class="top"><div class="mark">Au</div><h1>Calculadora de Oro</h1><div class="sub">Cotización internacional · Valores de referencia en HNL</div></header>
+<section class="card">
+<div class="label">Precio spot del oro · 24 quilates</div>
+<div class="spot" id="spot">Cargando…</div>
+<div class="small" id="perGram">Consultando cotización internacional en lempiras por gramo.</div>
+<div class="status"><span class="dot" id="dot"></span><span id="status">Conectando con la fuente de precios…</span></div>
+<div class="small" id="updated"></div>
+</section>
+<section class="card">
+<div class="grid">
+<div class="field"><label for="weight">Peso (gramos)</label><input id="weight" type="number" min="0" step="0.01" value="1" inputmode="decimal"></div>
+<div class="field"><label for="karat">Quilataje</label><select id="karat"></select></div>
+<div class="field"><label for="discount">Descuento sobre spot</label><select id="discount"><option value="0">0%</option><option value="5">5%</option><option value="10">10%</option><option value="15">15%</option><option value="20" selected>20%</option><option value="25">25%</option><option value="30">30%</option></select></div>
+<div class="field"><label>Precio por gramo</label><div class="result" id="unitPrice">—</div></div>
+</div>
+<div class="label" style="margin-top:12px">Total estimado a pagar</div>
+<div class="result" id="total">—</div>
+<div class="small">Estimación basada en el precio spot. No incluye pruebas, piedras, mermas ni otros ajustes comerciales.</div>
+</section>
+<section class="card">
+<div class="label" style="margin-bottom:12px">Tabla de precios por quilataje</div>
+<div class="tablewrap"><table><thead><tr><th>Quilataje</th><th>Pureza</th><th>Precio / gramo</th></tr></thead><tbody id="prices"></tbody></table></div>
+</section>
+<div class="foot">Fuente de cotización: XAUS · Actualización automática cada 60 segundos</div>
+</main>
+<script>
+const API='https://xaus.com/api/v1/spot?currency=HNL&unit=gram&compact=1';
+const fmt=n=>new Intl.NumberFormat('es-HN',{style:'currency',currency:'HNL',minimumFractionDigits:2,maximumFractionDigits:2}).format(n);
+const $=id=>document.getElementById(id);
+let price24=null;
+for(let k=1;k<=24;k++){const o=document.createElement('option');o.value=k;o.textContent=k+'K';if(k===14)o.selected=true;$('karat').append(o)}
+function calculate(){
+ const w=Math.max(0,Number($('weight').value)||0),k=Number($('karat').value),d=Number($('discount').value);
+ if(!Number.isFinite(price24)){ $('unitPrice').textContent='—';$('total').textContent='—';$('prices').innerHTML='';return; }
+ const tbody=[];
+ for(let q=1;q<=24;q++){const p=price24*q/24*(1-d/100);tbody.push('<tr class="'+(q===k?'active':'')+'"><td>'+q+'K</td><td>'+(q/24*100).toFixed(2)+'%</td><td>'+fmt(p)+'</td></tr>')}
+ $('prices').innerHTML=tbody.join('');
+ const unit=price24*k/24*(1-d/100);$('unitPrice').textContent=fmt(unit);$('total').textContent=fmt(unit*w);
+}
+function setState(state,message,stamp){
+ $('status').textContent=message;$('dot').className='dot '+(state==='fresh'?'ok':state==='bad'?'bad':'');
+ $('updated').textContent=stamp?'Última cotización: '+new Date(stamp).toLocaleString('es-HN'):'';
+}
+function render(){if(price24!==null){$('spot').textContent=fmt(price24);$('perGram').textContent='24K · '+fmt(price24)+' por gramo';calculate()}}
+async function update(){
+ try{
+  const res=await fetch(API,{cache:'no-store'});if(!res.ok)throw new Error('HTTP '+res.status);
+  const data=await res.json();const p=Number(data?.xau?.price);
+  if(!Number.isFinite(p)||p<=0)throw new Error('Respuesta sin precio válido');
+  price24=p;const asOf=data.price_as_of||data.data_state?.as_of||data.updated_at||new Date().toISOString();
+  localStorage.setItem('goldQuote',JSON.stringify({price:p,asOf}));
+  render();
+  const stale=data.stale===true||data.data_state?.status==='stale'||data.fx_stale===true;
+  setState(stale?'stale':'fresh',stale?'Cotización anterior / tipo de cambio desactualizado':'Cotización actualizada',asOf);
+ }catch(e){
+  const saved=localStorage.getItem('goldQuote');
+  if(saved){try{const q=JSON.parse(saved);price24=Number(q.price);render();setState('bad','Sin conexión: mostrando última cotización guardada',q.asOf)}catch(_){setState('bad','No se pudo obtener la cotización',null)}}
+  else setState('bad','Cotización no disponible. Revisa tu conexión.',null);
+ }
+}
+['weight','karat','discount'].forEach(id=>$(id).addEventListener('input',calculate));
+update();setInterval(update,60000);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')update()});
+if('serviceWorker' in navigator && location.protocol.startsWith('http'))window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+</script></body></html>
