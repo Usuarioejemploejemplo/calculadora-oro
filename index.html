@@ -122,83 +122,7 @@ function showView(name){
 document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>showView(b.dataset.view)));
 document.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>showView(b.dataset.go)));
 
-// Supabase Auth: solo inicia sesión y consulta el perfil/sucursales autorizadas.
-// Las operaciones de compra siguen deshabilitadas hasta completar el backend.
-const authForm=$('login-form');
-const authMessage=$('auth-message');
-const authIdentity=$('auth-identity');
-const loginButton=$('login-button');
-const logoutButton=$('logout-button');
-let auClient=null;
-function authStatus(message){authMessage.textContent=message}
-function showSignedOut(message){
- authIdentity.hidden=true;authIdentity.textContent='';
- loginButton.hidden=false;logoutButton.hidden=true;
- $('auth-email').disabled=false;$('auth-password').disabled=false;
- authStatus(message);
-}
-async function loadAuIdentity(user){
- const {data:profile,error:profileError}=await auClient.from('user_profiles')
-  .select('user_id,organization_id,full_name,role,is_active')
-  .eq('user_id',user.id).maybeSingle();
- if(profileError)throw profileError;
- if(!profile)throw new Error('El usuario inició sesión, pero no tiene un perfil de AU vinculado. Solicita al administrador que revise user_profiles.');
- if(!profile.is_active)throw new Error('Este usuario está desactivado. Contacta al administrador.');
- let branches=[];
- if(profile.role==='owner'||profile.role==='admin'){
-  const result=await auClient.from('branches').select('id,name,code,is_active')
-   .eq('organization_id',profile.organization_id).eq('is_active',true).order('name');
-  if(result.error)throw result.error;
-  branches=result.data||[];
- }else{
-  const result=await auClient.from('branch_memberships')
-   .select('branch_id, branches(id,name,code,is_active)')
-   .eq('user_id',user.id);
-  if(result.error)throw result.error;
-  branches=(result.data||[]).map(x=>x.branches).filter(x=>x&&x.is_active);
- }
- const branchNames=branches.map(b=>b.name+' ('+b.code+')');
- authIdentity.textContent=profile.full_name+' · '+profile.role+' · '+(branchNames.length?branchNames.join(', '):'Sin sucursales asignadas');
- authIdentity.hidden=false;loginButton.hidden=true;logoutButton.hidden=false;
- $('auth-email').disabled=true;$('auth-password').disabled=true;
- authStatus('Sesión iniciada. Perfil y permisos básicos consultados correctamente. La creación de compras aún no está habilitada.');
-}
-async function refreshAuSession(){
- if(!auClient){showSignedOut('No se pudo cargar la biblioteca de conexión. Comprueba tu conexión a internet y vuelve a cargar.');return}
- const {data,error}=await auClient.auth.getSession();
- if(error){showSignedOut('No se pudo comprobar la sesión: '+error.message);return}
- if(!data.session){showSignedOut('Conexión configurada. Inicia sesión para comprobar tu perfil y sucursales.');return}
- try{await loadAuIdentity(data.session.user)}
- catch(e){await auClient.auth.signOut();showSignedOut('No se pudo validar el perfil de AU; se cerró la sesión por seguridad: '+e.message)}
-}
-if(window.AU_SUPABASE_CONFIG&&window.supabase&&window.supabase.createClient){
- auClient=window.supabase.createClient(window.AU_SUPABASE_CONFIG.url,window.AU_SUPABASE_CONFIG.publishableKey);
- refreshAuSession();
- auClient.auth.onAuthStateChange((event,session)=>{
-  if(event==='SIGNED_OUT'||!session){showSignedOut('Sesión cerrada.');return}
-  if(event==='SIGNED_IN'||event==='TOKEN_REFRESHED')setTimeout(()=>refreshAuSession(),0);
- });
-}else{
- showSignedOut('No se pudo inicializar Supabase. Revisa la configuración y la conexión a internet.');
-}
-authForm.addEventListener('submit',async event=>{
- event.preventDefault();
- if(!auClient)return;
- loginButton.disabled=true;authStatus('Verificando credenciales…');
- const email=$('auth-email').value.trim(),password=$('auth-password').value;
- const {data,error}=await auClient.auth.signInWithPassword({email,password});
- loginButton.disabled=false;
- if(error){authStatus('No se pudo iniciar sesión: '+error.message);return}
- $('auth-password').value='';
- try{await loadAuIdentity(data.user)}
- catch(e){await auClient.auth.signOut();showSignedOut('No se pudo validar el perfil de AU; se cerró la sesión por seguridad: '+e.message)}
-});
-logoutButton.addEventListener('click',async()=>{
- logoutButton.disabled=true;
- const {error}=await auClient.auth.signOut();
- logoutButton.disabled=false;
- if(error)authStatus('No se pudo cerrar sesión: '+error.message);
-});
+// La autenticación se inicializa en un script independiente al final del documento.
 const API='https://xaus.com/api/v1/spot?currency=HNL&unit=gram&compact=1';
 const fmt=n=>new Intl.NumberFormat('es-HN',{style:'currency',currency:'HNL',minimumFractionDigits:2,maximumFractionDigits:2}).format(n);
 let price24=null;
@@ -236,4 +160,152 @@ async function update(){
 update();setInterval(update,60000);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')update()});
 if('serviceWorker' in navigator && location.protocol.startsWith('http'))window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+
+</script>
+<script>
+(() => {
+  const byId = id => document.getElementById(id);
+  const status = message => {
+    const el = byId('auth-message');
+    if (el) el.textContent = message;
+  };
+  const showSignedOut = message => {
+    const identity = byId('auth-identity');
+    const login = byId('login-button');
+    const logout = byId('logout-button');
+    if (identity) { identity.hidden = true; identity.textContent = ''; }
+    if (login) { login.hidden = false; login.disabled = false; }
+    if (logout) logout.hidden = true;
+    const email = byId('auth-email'), password = byId('auth-password');
+    if (email) email.disabled = false;
+    if (password) password.disabled = false;
+    status(message);
+  };
+  const showFailure = error => {
+    console.error('[AU Auth]', error);
+    showSignedOut('Error de conexión/inicialización: ' + (error && error.message ? error.message : String(error)));
+  };
+
+  async function start() {
+    const form = byId('login-form');
+    const login = byId('login-button');
+    const logout = byId('logout-button');
+    if (!form || !login || !logout) {
+      console.error('[AU Auth] No se encontró el formulario de acceso.');
+      return;
+    }
+
+    status('Inicializando acceso seguro…');
+    if (!window.AU_SUPABASE_CONFIG || !window.AU_SUPABASE_CONFIG.url || !window.AU_SUPABASE_CONFIG.publishableKey) {
+      showSignedOut('No se encontró la configuración pública de Supabase. Recarga la página e inténtalo de nuevo.');
+      return;
+    }
+    if (!window.supabase || typeof window.supabase.createClient !== 'function') {
+      showSignedOut('No se pudo cargar la biblioteca de Supabase desde Internet. Comprueba la conexión y recarga.');
+      return;
+    }
+
+    let client;
+    try {
+      client = window.supabase.createClient(
+        window.AU_SUPABASE_CONFIG.url,
+        window.AU_SUPABASE_CONFIG.publishableKey
+      );
+    } catch (error) {
+      showFailure(error);
+      return;
+    }
+
+    async function loadIdentity(user) {
+      const profileResult = await client.from('user_profiles')
+        .select('user_id,organization_id,full_name,role,is_active')
+        .eq('user_id', user.id).maybeSingle();
+      if (profileResult.error) throw profileResult.error;
+      const profile = profileResult.data;
+      if (!profile) throw new Error('La cuenta inició sesión, pero no tiene perfil en user_profiles.');
+      if (!profile.is_active) throw new Error('El usuario está desactivado.');
+
+      let branches = [];
+      if (profile.role === 'owner' || profile.role === 'admin') {
+        const result = await client.from('branches')
+          .select('id,name,code,is_active')
+          .eq('organization_id', profile.organization_id)
+          .eq('is_active', true).order('name');
+        if (result.error) throw result.error;
+        branches = result.data || [];
+      } else {
+        const result = await client.from('branch_memberships')
+          .select('branch_id, branches(id,name,code,is_active)')
+          .eq('user_id', user.id);
+        if (result.error) throw result.error;
+        branches = (result.data || []).map(row => row.branches).filter(row => row && row.is_active);
+      }
+
+      const identity = byId('auth-identity');
+      identity.textContent = (profile.full_name || user.email) + ' · ' + profile.role + ' · ' +
+        (branches.length ? branches.map(b => b.name + ' (' + b.code + ')').join(', ') : 'Sin sucursales asignadas');
+      identity.hidden = false;
+      login.hidden = true;
+      logout.hidden = false;
+      byId('auth-email').disabled = true;
+      byId('auth-password').disabled = true;
+      status('Sesión iniciada. Perfil y sucursales verificados. El registro de compras aún no está habilitado.');
+    }
+
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const email = byId('auth-email').value.trim();
+      const password = byId('auth-password').value;
+      if (!email || !password) { status('Escribe tu correo y contraseña.'); return; }
+      login.disabled = true;
+      status('Conectando con Supabase y verificando credenciales…');
+      try {
+        const result = await Promise.race([
+          client.auth.signInWithPassword({ email, password }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('La solicitud tardó demasiado. Comprueba la conexión a Internet e inténtalo otra vez.')), 15000))
+        ]);
+        if (result.error) throw result.error;
+        byId('auth-password').value = '';
+        await loadIdentity(result.data.user);
+      } catch (error) {
+        try { await client.auth.signOut(); } catch (_) {}
+        showSignedOut('No se pudo iniciar sesión: ' + (error && error.message ? error.message : String(error)));
+      } finally {
+        login.disabled = false;
+      }
+    });
+
+    logout.addEventListener('click', async () => {
+      logout.disabled = true;
+      try {
+        const result = await client.auth.signOut();
+        if (result.error) throw result.error;
+        showSignedOut('Sesión cerrada.');
+      } catch (error) {
+        status('No se pudo cerrar sesión: ' + error.message);
+      } finally {
+        logout.disabled = false;
+      }
+    });
+
+    status('Biblioteca y configuración cargadas. Comprobando sesión…');
+    try {
+      const result = await Promise.race([
+        client.auth.getSession(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('No se pudo comprobar la sesión a tiempo. Revisa tu conexión.')), 10000))
+      ]);
+      if (result.error) throw result.error;
+      if (result.data.session) await loadIdentity(result.data.session.user);
+      else showSignedOut('Conexión con Supabase lista. Inicia sesión.');
+    } catch (error) {
+      showSignedOut('Supabase no respondió correctamente: ' + error.message);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start, { once: true });
+  } else {
+    start();
+  }
+})();
 </script></body></html>
