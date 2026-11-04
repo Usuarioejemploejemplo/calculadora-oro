@@ -63,7 +63,7 @@ create table public.purchases (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete restrict,
   branch_id uuid not null,
-  purchase_number text not null,
+  purchase_number text,
   customer_id uuid not null,
   employee_id uuid not null references auth.users(id),
   status text not null default 'draft' check (status in ('draft','completed','voided')),
@@ -76,6 +76,7 @@ create table public.purchases (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (branch_id, purchase_number),
+  check (status = 'draft' or purchase_number is not null),
   foreign key (branch_id, organization_id)
     references public.branches(id, organization_id) on delete restrict,
   foreign key (customer_id, organization_id)
