@@ -111,6 +111,7 @@ main{max-width:680px;margin:0 auto}.top{padding:26px 4px 18px;text-align:center}
 <script src="./supabase-config.js"></script>
 <script>
 
+const $=id=>document.getElementById(id);
 const views=['home','calculator','customers','newpurchase','history'];
 function showView(name){
  if(!views.includes(name))return;
@@ -200,7 +201,6 @@ logoutButton.addEventListener('click',async()=>{
 });
 const API='https://xaus.com/api/v1/spot?currency=HNL&unit=gram&compact=1';
 const fmt=n=>new Intl.NumberFormat('es-HN',{style:'currency',currency:'HNL',minimumFractionDigits:2,maximumFractionDigits:2}).format(n);
-const $=id=>document.getElementById(id);
 let price24=null;
 for(let k=1;k<=24;k++){const o=document.createElement('option');o.value=k;o.textContent=k+'K';if(k===14)o.selected=true;$('karat').append(o)}
 function calculate(){
