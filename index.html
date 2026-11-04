@@ -168,7 +168,7 @@ async function refreshAuSession(){
  if(error){showSignedOut('No se pudo comprobar la sesión: '+error.message);return}
  if(!data.session){showSignedOut('Conexión configurada. Inicia sesión para comprobar tu perfil y sucursales.');return}
  try{await loadAuIdentity(data.session.user)}
- catch(e){showSignedOut('Sesión válida, pero no se pudo leer el perfil: '+e.message)}
+ catch(e){await auClient.auth.signOut();showSignedOut('No se pudo validar el perfil de AU; se cerró la sesión por seguridad: '+e.message)}
 }
 if(window.AU_SUPABASE_CONFIG&&window.supabase&&window.supabase.createClient){
  auClient=window.supabase.createClient(window.AU_SUPABASE_CONFIG.url,window.AU_SUPABASE_CONFIG.publishableKey);
@@ -190,7 +190,7 @@ authForm.addEventListener('submit',async event=>{
  if(error){authStatus('No se pudo iniciar sesión: '+error.message);return}
  $('auth-password').value='';
  try{await loadAuIdentity(data.user)}
- catch(e){authStatus('Sesión iniciada, pero falta configurar el acceso de AU: '+e.message)}
+ catch(e){await auClient.auth.signOut();showSignedOut('No se pudo validar el perfil de AU; se cerró la sesión por seguridad: '+e.message)}
 });
 logoutButton.addEventListener('click',async()=>{
  logoutButton.disabled=true;
