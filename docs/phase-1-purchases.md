@@ -20,9 +20,9 @@
 
 ## Roles iniciales
 - owner/admin: acceso a todas las sucursales de la organización.
-- manager: acceso a las sucursales asignadas y operación administrativa.
-- employee: registrar clientes y compras en sucursales asignadas.
-- viewer: consulta sin modificar.
+- Los dos usuarios principales tendrán rol `admin` y permisos idénticos en toda la organización.
+- Todos los miembros activos podrán consultar todas las sucursales de la organización mediante la migración `002_shared_access_all_branches.sql`.
+- Las cuentas individuales se conservan para identificar quién registró cada operación y mantener auditoría.
 
 La aplicación no debe confiar en controles visuales del frontend: todas las restricciones se aplican también en RLS/backend.
 
@@ -40,8 +40,8 @@ La aplicación no debe confiar en controles visuales del frontend: todas las res
 La migración SQL inicial está en `supabase/migrations/001_phase1_purchases.sql`.
 
 ## Flujo de compra
-1. El empleado inicia sesión.
-2. La aplicación determina la sucursal activa entre las sucursales asignadas.
+1. Cada administrador inicia sesión con su propia cuenta.
+2. Ambos pueden seleccionar y operar en cualquiera de las sucursales de la organización.
 3. Busca un cliente existente o registra uno nuevo.
 4. La calculadora entrega una cotización y permite añadir una o varias piezas.
 5. Se valida peso > 0, quilataje entre 1K y 24K, descuento permitido y total.
