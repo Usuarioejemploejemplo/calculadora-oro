@@ -1,10 +1,11 @@
--- AU · Fase 1: estructura inicial multi-sucursal para compras y clientes
--- Ejecutar en Supabase SQL Editor después de crear el proyecto.
--- No contiene credenciales ni crea usuarios: el primer administrador se configura aparte.
+-- AU · Fase 1: base segura para clientes y compras
+-- Instalar una sola vez en un proyecto Supabase nuevo.
+-- El primer usuario administrador se vincula por separado desde SQL Editor.
+-- Esta migración NO crea credenciales, recibos definitivos ni flujo de cierre de compra.
 
 create extension if not exists pgcrypto;
 
-create table if not exists public.organizations (
+create table public.organizations (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   country_code text not null default 'HN',
@@ -12,9 +13,9 @@ create table if not exists public.organizations (
   created_at timestamptz not null default now()
 );
 
-create table if not exists public.branches (
+create table public.branches (
   id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id),
+  organization_id uuid not null references public.organizations(id) on delete restrict,
   code text not null,
   name text not null,
   address text,
@@ -25,25 +26,25 @@ create table if not exists public.branches (
   unique (id, organization_id)
 );
 
-create table if not exists public.user_profiles (
+create table public.user_profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
-  organization_id uuid not null references public.organizations(id),
+  organization_id uuid not null references public.organizations(id) on delete restrict,
   full_name text not null,
   role text not null check (role in ('owner','admin','manager','employee','viewer')),
   is_active boolean not null default true,
   created_at timestamptz not null default now()
 );
 
-create table if not exists public.branch_memberships (
+create table public.branch_memberships (
   user_id uuid not null references public.user_profiles(user_id) on delete cascade,
   branch_id uuid not null references public.branches(id) on delete cascade,
   created_at timestamptz not null default now(),
   primary key (user_id, branch_id)
 );
 
-create table if not exists public.customers (
+create table public.customers (
   id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id),
+  organization_id uuid not null references public.organizations(id) on delete restrict,
   full_name text not null,
   phone text,
   identity_document text,
@@ -51,23 +52,21 @@ create table if not exists public.customers (
   notes text,
   created_by uuid references auth.users(id),
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  unique (id, organization_id)
 );
 
-create index if not exists customers_org_name_idx
-  on public.customers (organization_id, lower(full_name));
-create index if not exists customers_org_phone_idx
-  on public.customers (organization_id, phone);
+create index customers_org_name_idx on public.customers (organization_id, lower(full_name));
+create index customers_org_phone_idx on public.customers (organization_id, phone);
 
-create table if not exists public.purchases (
+create table public.purchases (
   id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id),
+  organization_id uuid not null references public.organizations(id) on delete restrict,
   branch_id uuid not null,
   purchase_number text not null,
-  customer_id uuid not null references public.customers(id),
+  customer_id uuid not null,
   employee_id uuid not null references auth.users(id),
-  status text not null default 'completed'
-    check (status in ('draft','completed','voided')),
+  status text not null default 'draft' check (status in ('draft','completed','voided')),
   gold_quote_hnl_per_gram numeric(14,4) not null check (gold_quote_hnl_per_gram > 0),
   discount_percent numeric(5,2) not null check (discount_percent between 0 and 100),
   subtotal_hnl numeric(14,2) not null default 0 check (subtotal_hnl >= 0),
@@ -78,16 +77,16 @@ create table if not exists public.purchases (
   updated_at timestamptz not null default now(),
   unique (branch_id, purchase_number),
   foreign key (branch_id, organization_id)
-    references public.branches(id, organization_id)
+    references public.branches(id, organization_id) on delete restrict,
+  foreign key (customer_id, organization_id)
+    references public.customers(id, organization_id) on delete restrict
 );
 
-create index if not exists purchases_org_date_idx
-  on public.purchases (organization_id, created_at desc);
-create index if not exists purchases_branch_date_idx
-  on public.purchases (branch_id, created_at desc);
-create index if not exists purchases_customer_idx on public.purchases (customer_id);
+create index purchases_org_date_idx on public.purchases (organization_id, created_at desc);
+create index purchases_branch_date_idx on public.purchases (branch_id, created_at desc);
+create index purchases_customer_idx on public.purchases (customer_id);
 
-create table if not exists public.purchase_items (
+create table public.purchase_items (
   id uuid primary key default gen_random_uuid(),
   purchase_id uuid not null references public.purchases(id) on delete restrict,
   item_type text not null,
@@ -101,10 +100,9 @@ create table if not exists public.purchase_items (
   created_at timestamptz not null default now()
 );
 
-create index if not exists purchase_items_purchase_idx
-  on public.purchase_items (purchase_id);
+create index purchase_items_purchase_idx on public.purchase_items (purchase_id);
 
-create table if not exists public.purchase_attachments (
+create table public.purchase_attachments (
   id uuid primary key default gen_random_uuid(),
   purchase_id uuid not null references public.purchases(id) on delete restrict,
   storage_path text not null unique,
@@ -114,46 +112,61 @@ create table if not exists public.purchase_attachments (
   created_at timestamptz not null default now()
 );
 
-create table if not exists public.audit_events (
+create table public.audit_events (
   id bigint generated always as identity primary key,
-  organization_id uuid not null references public.organizations(id),
-  branch_id uuid references public.branches(id),
+  organization_id uuid not null references public.organizations(id) on delete restrict,
+  branch_id uuid,
   actor_user_id uuid references auth.users(id),
   entity_type text not null,
   entity_id uuid,
   action text not null,
   details jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  foreign key (branch_id, organization_id)
+    references public.branches(id, organization_id) on delete restrict
 );
 
-create index if not exists audit_org_date_idx
-  on public.audit_events (organization_id, created_at desc);
+create index audit_org_date_idx on public.audit_events (organization_id, created_at desc);
 
--- Funciones de autorización: las políticas consultan membresías y rol del usuario.
+-- Helpers SECURITY DEFINER para consultar membresías sin recursión de RLS.
 create or replace function public.is_org_member(target_org uuid)
 returns boolean
 language sql stable security definer
-set search_path = public
+set search_path = ''
 as $$
   select exists (
     select 1 from public.user_profiles p
-    where p.user_id = auth.uid()
+    where p.user_id = (select auth.uid())
       and p.organization_id = target_org
       and p.is_active = true
+  );
+$$;
+
+create or replace function public.has_org_role(target_org uuid, allowed_roles text[])
+returns boolean
+language sql stable security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.user_profiles p
+    where p.user_id = (select auth.uid())
+      and p.organization_id = target_org
+      and p.is_active = true
+      and p.role = any(allowed_roles)
   );
 $$;
 
 create or replace function public.can_access_branch(target_branch uuid)
 returns boolean
 language sql stable security definer
-set search_path = public
+set search_path = ''
 as $$
   select exists (
     select 1
     from public.branches b
     join public.user_profiles p
       on p.organization_id = b.organization_id
-     and p.user_id = auth.uid()
+     and p.user_id = (select auth.uid())
      and p.is_active = true
     left join public.branch_memberships bm
       on bm.branch_id = b.id and bm.user_id = p.user_id
@@ -162,6 +175,13 @@ as $$
       and (p.role in ('owner','admin') or bm.user_id is not null)
   );
 $$;
+
+revoke all on function public.is_org_member(uuid) from public, anon;
+revoke all on function public.has_org_role(uuid, text[]) from public, anon;
+revoke all on function public.can_access_branch(uuid) from public, anon;
+grant execute on function public.is_org_member(uuid) to authenticated;
+grant execute on function public.has_org_role(uuid, text[]) to authenticated;
+grant execute on function public.can_access_branch(uuid) to authenticated;
 
 alter table public.organizations enable row level security;
 alter table public.branches enable row level security;
@@ -173,113 +193,99 @@ alter table public.purchase_items enable row level security;
 alter table public.purchase_attachments enable row level security;
 alter table public.audit_events enable row level security;
 
-create policy "organization members read organization"
-on public.organizations for select
-using (public.is_org_member(id));
+create policy org_read_members on public.organizations
+for select to authenticated using (public.is_org_member(id));
 
-create policy "organization members read branches"
-on public.branches for select
-using (public.is_org_member(organization_id));
+create policy branches_read_org on public.branches
+for select to authenticated using (public.is_org_member(organization_id));
 
-create policy "users read own profile or organization admins read profiles"
-on public.user_profiles for select
-using (
-  user_id = auth.uid()
-  or (
-    public.is_org_member(organization_id)
-    and exists (
-      select 1 from public.user_profiles me
-      where me.user_id = auth.uid()
-        and me.organization_id = user_profiles.organization_id
-        and me.role in ('owner','admin','manager')
-        and me.is_active = true
-    )
+create policy profiles_read_self_or_managers on public.user_profiles
+for select to authenticated using (
+  user_id = (select auth.uid())
+  or public.has_org_role(organization_id, array['owner','admin','manager'])
+);
+
+create policy memberships_read_self_or_branch_admins on public.branch_memberships
+for select to authenticated using (
+  user_id = (select auth.uid())
+  or public.has_org_role(
+    (select b.organization_id from public.branches b where b.id = branch_id),
+    array['owner','admin','manager']
   )
 );
 
-create policy "users read their branch memberships"
-on public.branch_memberships for select
-using (
-  user_id = auth.uid()
-  or public.can_access_branch(branch_id)
+create policy customers_read_org on public.customers
+for select to authenticated using (public.is_org_member(organization_id));
+
+create policy customers_insert_staff on public.customers
+for insert to authenticated with check (
+  public.has_org_role(organization_id, array['owner','admin','manager','employee'])
+  and (created_by is null or created_by = (select auth.uid()))
 );
 
-create policy "organization members read customers"
-on public.customers for select
-using (public.is_org_member(organization_id));
+create policy customers_update_managers on public.customers
+for update to authenticated
+using (public.has_org_role(organization_id, array['owner','admin','manager']))
+with check (public.has_org_role(organization_id, array['owner','admin','manager']));
 
-create policy "organization members create customers"
-on public.customers for insert
-with check (
-  public.is_org_member(organization_id)
-  and (created_by is null or created_by = auth.uid())
+create policy purchases_read_branch on public.purchases
+for select to authenticated using (public.can_access_branch(branch_id));
+
+-- Solo se pueden crear borradores desde el cliente. Cerrar/anular compras será
+-- una operación backend transaccional; no hay UPDATE ni DELETE directo.
+create policy purchases_insert_draft on public.purchases
+for insert to authenticated with check (
+  status = 'draft'
+  and employee_id = (select auth.uid())
+  and public.has_org_role(organization_id, array['owner','admin','manager','employee'])
+  and public.can_access_branch(branch_id)
 );
 
-create policy "organization members update customers"
-on public.customers for update
-using (public.is_org_member(organization_id))
-with check (public.is_org_member(organization_id));
-
-create policy "branch members read purchases"
-on public.purchases for select
-using (public.can_access_branch(branch_id));
-
-create policy "branch members create purchases as themselves"
-on public.purchases for insert
-with check (
-  public.can_access_branch(branch_id)
-  and employee_id = auth.uid()
-  and exists (
-    select 1 from public.branches b
-    where b.id = branch_id and b.organization_id = purchases.organization_id
-  )
-  and public.is_org_member(organization_id)
-);
-
-create policy "branch members update purchases"
-on public.purchases for update
-using (public.can_access_branch(branch_id))
-with check (public.can_access_branch(branch_id));
-
-create policy "purchase items follow parent purchase access"
-on public.purchase_items for select
-using (exists (
-  select 1 from public.purchases p
-  where p.id = purchase_id and public.can_access_branch(p.branch_id)
-));
-
-create policy "branch members add purchase items"
-on public.purchase_items for insert
-with check (exists (
-  select 1 from public.purchases p
-  where p.id = purchase_id and public.can_access_branch(p.branch_id)
-));
-
-create policy "branch members read purchase attachments"
-on public.purchase_attachments for select
-using (exists (
-  select 1 from public.purchases p
-  where p.id = purchase_id and public.can_access_branch(p.branch_id)
-));
-
-create policy "branch members add purchase attachments"
-on public.purchase_attachments for insert
-with check (
-  uploaded_by = auth.uid()
-  and exists (
+create policy purchase_items_read_parent on public.purchase_items
+for select to authenticated using (
+  exists (
     select 1 from public.purchases p
     where p.id = purchase_id and public.can_access_branch(p.branch_id)
   )
 );
 
-create policy "branch members read audit events"
-on public.audit_events for select
-using (
+create policy purchase_items_insert_draft_parent on public.purchase_items
+for insert to authenticated with check (
+  exists (
+    select 1 from public.purchases p
+    where p.id = purchase_id
+      and p.status = 'draft'
+      and p.employee_id = (select auth.uid())
+      and public.can_access_branch(p.branch_id)
+  )
+);
+
+create policy attachments_read_parent on public.purchase_attachments
+for select to authenticated using (
+  exists (
+    select 1 from public.purchases p
+    where p.id = purchase_id and public.can_access_branch(p.branch_id)
+  )
+);
+
+create policy attachments_insert_draft_parent on public.purchase_attachments
+for insert to authenticated with check (
+  uploaded_by = (select auth.uid())
+  and exists (
+    select 1 from public.purchases p
+    where p.id = purchase_id
+      and p.status = 'draft'
+      and p.employee_id = (select auth.uid())
+      and public.can_access_branch(p.branch_id)
+  )
+);
+
+create policy audit_read_branch_or_org on public.audit_events
+for select to authenticated using (
   (branch_id is not null and public.can_access_branch(branch_id))
   or (branch_id is null and public.is_org_member(organization_id))
 );
 
--- Nota de seguridad:
--- No se habilitan escrituras directas para audit_events desde el cliente.
--- Las anulaciones, secuencias de recibos y cambios de permisos deben pasar
--- por funciones backend transaccionales y autorizadas antes de producción.
+-- No se conceden escrituras directas a tablas administrativas ni a auditoría.
+-- No se habilitan UPDATE/DELETE en compras/items: las operaciones definitivas
+-- se implementarán mediante funciones backend con transacción y auditoría.
