@@ -53,9 +53,9 @@ main{max-width:680px;margin:0 auto}.top{padding:26px 4px 18px;text-align:center}
 <section class="view" id="view-home">
  <section class="authbox" aria-labelledby="auth-title">
   <h2 id="auth-title">Acceso seguro a AU</h2>
-  <p class="small">Inicia sesión con el correo y la contraseña del usuario que creaste en Supabase.</p>
+  <p class="small">Inicia sesión con tu nombre de usuario y contraseña.</p>
   <form id="login-form" class="authgrid">
-   <input id="auth-email" type="email" autocomplete="username" placeholder="Correo electrónico" required>
+   <input id="auth-username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="Nombre de usuario" required>
    <input id="auth-password" type="password" autocomplete="current-password" placeholder="Contraseña" required>
    <div class="authactions"><button class="btn" id="login-button" type="submit">Iniciar sesión</button><button class="authsecondary" id="logout-button" type="button" hidden>Cerrar sesión</button></div>
   </form>
@@ -176,8 +176,8 @@ if('serviceWorker' in navigator && location.protocol.startsWith('http'))window.a
     if (identity) { identity.hidden = true; identity.textContent = ''; }
     if (login) { login.hidden = false; login.disabled = false; }
     if (logout) logout.hidden = true;
-    const email = byId('auth-email'), password = byId('auth-password');
-    if (email) email.disabled = false;
+    const username = byId('auth-username'), password = byId('auth-password');
+    if (username) username.disabled = false;
     if (password) password.disabled = false;
     status(message);
   };
@@ -247,23 +247,40 @@ if('serviceWorker' in navigator && location.protocol.startsWith('http'))window.a
       identity.hidden = false;
       login.hidden = true;
       logout.hidden = false;
-      byId('auth-email').disabled = true;
+      byId('auth-username').disabled = true;
       byId('auth-password').disabled = true;
       status('Sesión iniciada. Perfil y sucursales verificados. El registro de compras aún no está habilitado.');
     }
 
     form.addEventListener('submit', async event => {
       event.preventDefault();
-      const email = byId('auth-email').value.trim();
+      const username = byId('auth-username').value.trim().toLowerCase();
       const password = byId('auth-password').value;
-      if (!email || !password) { status('Escribe tu correo y contraseña.'); return; }
+      if (!username || !password) { status('Escribe tu nombre de usuario y contraseña.'); return; }
       login.disabled = true;
-      status('Conectando con Supabase y verificando credenciales…');
+      status('Verificando usuario y contraseña de forma segura…');
       try {
-        const result = await Promise.race([
-          client.auth.signInWithPassword({ email, password }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('La solicitud tardó demasiado. Comprueba la conexión a Internet e inténtalo otra vez.')), 15000))
+        const response = await Promise.race([
+          fetch(window.AU_SUPABASE_CONFIG.url + '/functions/v1/login-by-username', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': window.AU_SUPABASE_CONFIG.publishableKey
+            },
+            body: JSON.stringify({ username, password })
+          }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('La solicitud tardó demasiado. Comprueba tu conexión e inténtalo otra vez.')), 15000))
         ]);
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          if (response.status === 401) throw new Error('Nombre de usuario o contraseña incorrectos.');
+          throw new Error(payload.error || 'No se pudo completar el inicio de sesión.');
+        }
+        if (!payload.access_token || !payload.refresh_token) throw new Error('El servidor no devolvió una sesión válida.');
+        const result = await client.auth.setSession({
+          access_token: payload.access_token,
+          refresh_token: payload.refresh_token
+        });
         if (result.error) throw result.error;
         byId('auth-password').value = '';
         await loadIdentity(result.data.user);
