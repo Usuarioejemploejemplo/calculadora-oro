@@ -18,10 +18,47 @@ main{max-width:680px;margin:0 auto}.top{padding:26px 4px 18px;text-align:center}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field label{display:block;color:var(--muted);font-size:13px;margin-bottom:7px}.field input,.field select{width:100%;border:1px solid #484848;background:#0c0c0c;color:white;border-radius:10px;padding:13px;font-size:17px;min-height:48px}
 .result{font-size:31px;font-weight:800;color:var(--gold);margin:9px 0}.btn{background:var(--gold);color:#17130a;border:0;border-radius:10px;padding:12px 16px;font-weight:800;font-size:14px}.tablewrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:14px}td,th{text-align:right;padding:9px 5px;border-bottom:1px solid var(--line);white-space:nowrap}td:first-child,th:first-child{text-align:left}th{color:var(--muted);font-weight:600}.active td{color:var(--gold);font-weight:800}.foot{text-align:center;color:var(--muted);font-size:11px;padding:16px}
 @media(max-width:370px){.grid{grid-template-columns:1fr}.spot{font-size:29px}}
+
+.appnav{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px;margin:4px 0 16px}
+.navbtn{background:#171717;border:1px solid #333;color:#c8c8c8;border-radius:11px;padding:10px 4px;font-size:11px;font-weight:700;min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px}
+.navbtn .ico{font-size:17px;line-height:1}.navbtn.active{border-color:var(--gold);color:var(--gold);background:#211d12}
+.view[hidden]{display:none!important}.welcome{padding:20px}.welcome h2{margin:7px 0 5px;font-size:22px}.welcome p{color:var(--muted);font-size:13px;line-height:1.5;margin:0}
+.quickgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:15px}
+.quick{background:#101010;border:1px solid #343434;border-radius:13px;padding:14px;text-align:left;color:#fff;min-height:88px}
+.quick strong{display:block;color:var(--gold);font-size:14px;margin-bottom:5px}.quick span{font-size:12px;color:var(--muted)}
+.soon{border:1px dashed #51472d;background:#17150f;border-radius:13px;padding:18px;margin-top:12px}
+.soon strong{color:var(--gold)}.sectionhead{display:flex;align-items:center;justify-content:space-between;gap:12px}
+@media(max-width:390px){.navbtn{font-size:10px;padding:8px 2px}.navbtn .ico{font-size:15px}.quickgrid{grid-template-columns:1fr}}
 </style>
 </head>
 <body><main>
-<header class="top"><div class="mark">Au</div><h1>Calculadora de Oro</h1><div class="sub">By:D.Fajardo/Inversiones LA · Valores de referencia en LPS</div></header>
+
+<header class="top"><div class="mark">Au</div><h1>AU · Gestión de Oro y Empeños</h1><div class="sub">Inversiones LA · Administración de operaciones en HNL</div></header>
+<nav class="appnav" aria-label="Navegación principal">
+<button class="navbtn active" data-view="home"><span class="ico">⌂</span>Inicio</button>
+<button class="navbtn" data-view="calculator"><span class="ico">◈</span>Calculadora</button>
+<button class="navbtn" data-view="customers"><span class="ico">♙</span>Clientes</button>
+<button class="navbtn" data-view="newpurchase"><span class="ico">＋</span>Compra</button>
+<button class="navbtn" data-view="history"><span class="ico">▤</span>Historial</button>
+</nav>
+<section class="view" id="view-home">
+ <section class="card welcome">
+  <div class="label">Panel principal · Sucursal Las Flores</div>
+  <h2>Bienvenido a AU</h2>
+  <p>Tu centro de trabajo para cotizar oro y administrar compras, clientes y operaciones de empeño.</p>
+  <div class="quickgrid">
+   <button class="quick" data-go="calculator"><strong>Calculadora de oro</strong><span>Consultar cotización y estimar pagos</span></button>
+   <button class="quick" data-go="customers"><strong>Clientes</strong><span>Próximamente · Registro y búsqueda</span></button>
+   <button class="quick" data-go="newpurchase"><strong>Nueva compra</strong><span>Próximamente · Registro de piezas</span></button>
+   <button class="quick" data-go="history"><strong>Historial</strong><span>Próximamente · Consulta de operaciones</span></button>
+  </div>
+ </section>
+ <section class="card">
+  <div class="label">Estado del proyecto</div>
+  <p class="small">La base de datos ya está creada y la sucursal inicial está configurada. La conexión de la aplicación y el guardado de operaciones todavía están en desarrollo. No registres compras reales en esta versión.</p>
+ </section>
+</section>
+<section class="view" id="view-calculator" hidden>
 <section class="card">
 <div class="label">Precio spot del oro · 24 quilates</div>
 <div class="spot" id="spot">Cargando…</div>
@@ -44,9 +81,24 @@ main{max-width:680px;margin:0 auto}.top{padding:26px 4px 18px;text-align:center}
 <div class="label" style="margin-bottom:12px">Tabla de precios por quilataje</div>
 <div class="tablewrap"><table><thead><tr><th>Quilataje</th><th>Pureza</th><th>Precio / gramo</th></tr></thead><tbody id="prices"></tbody></table></div>
 </section>
-<div class="foot">Fuente de cotización: XAUS · Actualización automática cada 60 segundos</div>
+</section>
+<section class="view" id="view-customers" hidden><section class="card"><div class="label">Clientes</div><h2>Registro de clientes</h2><div class="soon"><strong>Módulo en preparación</strong><p class="small">Aquí podrás registrar, buscar y consultar clientes compartidos entre compras y empeños.</p></div></section></section>
+<section class="view" id="view-newpurchase" hidden><section class="card"><div class="label">Compras</div><h2>Nueva compra de oro</h2><div class="soon"><strong>Módulo en preparación</strong><p class="small">Aquí se registrarán clientes, piezas, peso, quilataje, cotización, descuento y recibo. El guardado se habilitará cuando terminemos la conexión y las validaciones del backend.</p></div></section></section>
+<section class="view" id="view-history" hidden><section class="card"><div class="label">Operaciones</div><h2>Historial de compras</h2><div class="soon"><strong>Módulo en preparación</strong><p class="small">Aquí podrás filtrar compras por fecha, cliente, sucursal, empleado y estado.</p></div></section></section>
+<div class="foot">AU · Gestión de Oro y Empeños · Cotización de referencia XAUS</div>
 </main>
 <script>
+
+const views=['home','calculator','customers','newpurchase','history'];
+function showView(name){
+ if(!views.includes(name))return;
+ views.forEach(v=>{const el=document.getElementById('view-'+v);if(el)el.hidden=v!==name;});
+ document.querySelectorAll('.navbtn').forEach(b=>b.classList.toggle('active',b.dataset.view===name));
+ window.scrollTo({top:0,behavior:'smooth'});
+}
+document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>showView(b.dataset.view)));
+document.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>showView(b.dataset.go)));
+
 const API='https://xaus.com/api/v1/spot?currency=HNL&unit=gram&compact=1';
 const fmt=n=>new Intl.NumberFormat('es-HN',{style:'currency',currency:'HNL',minimumFractionDigits:2,maximumFractionDigits:2}).format(n);
 const $=id=>document.getElementById(id);
