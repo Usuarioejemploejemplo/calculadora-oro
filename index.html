@@ -28,6 +28,15 @@ main{max-width:680px;margin:0 auto}.top{padding:26px 4px 18px;text-align:center}
 .quick strong{display:block;color:var(--gold);font-size:14px;margin-bottom:5px}.quick span{font-size:12px;color:var(--muted)}
 .soon{border:1px dashed #51472d;background:#17150f;border-radius:13px;padding:18px;margin-top:12px}
 .soon strong{color:var(--gold)}.sectionhead{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.authbox{border:1px solid #51472d;background:#17150f;border-radius:14px;padding:16px;margin:0 0 13px}
+.authbox h2{font-size:17px;margin:0 0 7px;color:var(--gold)}
+.authgrid{display:grid;gap:10px;margin-top:12px}
+.authgrid input{width:100%;border:1px solid #484848;background:#0c0c0c;color:#fff;border-radius:10px;padding:13px;font-size:16px;min-height:48px}
+.authactions{display:flex;gap:9px;flex-wrap:wrap;margin-top:11px}
+.authsecondary{background:#292929;color:#fff;border:1px solid #555;border-radius:10px;padding:12px 15px;font-weight:700}
+.authmessage{font-size:12px;color:var(--muted);line-height:1.5;margin-top:10px;white-space:pre-wrap}
+.authidentity{font-size:13px;line-height:1.6;color:#eee;margin-top:8px}
+
 @media(max-width:390px){.navbtn{font-size:10px;padding:8px 2px}.navbtn .ico{font-size:15px}.quickgrid{grid-template-columns:1fr}}
 </style>
 </head>
@@ -42,6 +51,17 @@ main{max-width:680px;margin:0 auto}.top{padding:26px 4px 18px;text-align:center}
 <button class="navbtn" data-view="history"><span class="ico">▤</span>Historial</button>
 </nav>
 <section class="view" id="view-home">
+ <section class="authbox" aria-labelledby="auth-title">
+  <h2 id="auth-title">Acceso seguro a AU</h2>
+  <p class="small">Inicia sesión con el correo y la contraseña del usuario que creaste en Supabase.</p>
+  <form id="login-form" class="authgrid">
+   <input id="auth-email" type="email" autocomplete="username" placeholder="Correo electrónico" required>
+   <input id="auth-password" type="password" autocomplete="current-password" placeholder="Contraseña" required>
+   <div class="authactions"><button class="btn" id="login-button" type="submit">Iniciar sesión</button><button class="authsecondary" id="logout-button" type="button" hidden>Cerrar sesión</button></div>
+  </form>
+  <div class="authidentity" id="auth-identity" hidden></div>
+  <div class="authmessage" id="auth-message" role="status" aria-live="polite">Comprobando conexión con Supabase…</div>
+ </section>
  <section class="card welcome">
   <div class="label">Panel principal · Sucursal Las Flores</div>
   <h2>Bienvenido a AU</h2>
@@ -87,6 +107,7 @@ main{max-width:680px;margin:0 auto}.top{padding:26px 4px 18px;text-align:center}
 <section class="view" id="view-history" hidden><section class="card"><div class="label">Operaciones</div><h2>Historial de compras</h2><div class="soon"><strong>Módulo en preparación</strong><p class="small">Aquí podrás filtrar compras por fecha, cliente, sucursal, empleado y estado.</p></div></section></section>
 <div class="foot">AU · Gestión de Oro y Empeños · Cotización de referencia XAUS</div>
 </main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="./supabase-config.js"></script>
 <script>
 
@@ -100,6 +121,83 @@ function showView(name){
 document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>showView(b.dataset.view)));
 document.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>showView(b.dataset.go)));
 
+// Supabase Auth: solo inicia sesión y consulta el perfil/sucursales autorizadas.
+// Las operaciones de compra siguen deshabilitadas hasta completar el backend.
+const authForm=$('login-form');
+const authMessage=$('auth-message');
+const authIdentity=$('auth-identity');
+const loginButton=$('login-button');
+const logoutButton=$('logout-button');
+let auClient=null;
+function authStatus(message){authMessage.textContent=message}
+function showSignedOut(message){
+ authIdentity.hidden=true;authIdentity.textContent='';
+ loginButton.hidden=false;logoutButton.hidden=true;
+ $('auth-email').disabled=false;$('auth-password').disabled=false;
+ authStatus(message);
+}
+async function loadAuIdentity(user){
+ const {data:profile,error:profileError}=await auClient.from('user_profiles')
+  .select('user_id,organization_id,full_name,role,is_active')
+  .eq('user_id',user.id).maybeSingle();
+ if(profileError)throw profileError;
+ if(!profile)throw new Error('El usuario inició sesión, pero no tiene un perfil de AU vinculado. Solicita al administrador que revise user_profiles.');
+ if(!profile.is_active)throw new Error('Este usuario está desactivado. Contacta al administrador.');
+ let branches=[];
+ if(profile.role==='owner'||profile.role==='admin'){
+  const result=await auClient.from('branches').select('id,name,code,is_active')
+   .eq('organization_id',profile.organization_id).eq('is_active',true).order('name');
+  if(result.error)throw result.error;
+  branches=result.data||[];
+ }else{
+  const result=await auClient.from('branch_memberships')
+   .select('branch_id, branches(id,name,code,is_active)')
+   .eq('user_id',user.id);
+  if(result.error)throw result.error;
+  branches=(result.data||[]).map(x=>x.branches).filter(x=>x&&x.is_active);
+ }
+ const branchNames=branches.map(b=>b.name+' ('+b.code+')');
+ authIdentity.textContent=profile.full_name+' · '+profile.role+' · '+(branchNames.length?branchNames.join(', '):'Sin sucursales asignadas');
+ authIdentity.hidden=false;loginButton.hidden=true;logoutButton.hidden=false;
+ $('auth-email').disabled=true;$('auth-password').disabled=true;
+ authStatus('Sesión iniciada. Perfil y permisos básicos consultados correctamente. La creación de compras aún no está habilitada.');
+}
+async function refreshAuSession(){
+ if(!auClient){showSignedOut('No se pudo cargar la biblioteca de conexión. Comprueba tu conexión a internet y vuelve a cargar.');return}
+ const {data,error}=await auClient.auth.getSession();
+ if(error){showSignedOut('No se pudo comprobar la sesión: '+error.message);return}
+ if(!data.session){showSignedOut('Conexión configurada. Inicia sesión para comprobar tu perfil y sucursales.');return}
+ try{await loadAuIdentity(data.session.user)}
+ catch(e){showSignedOut('Sesión válida, pero no se pudo leer el perfil: '+e.message)}
+}
+if(window.AU_SUPABASE_CONFIG&&window.supabase&&window.supabase.createClient){
+ auClient=window.supabase.createClient(window.AU_SUPABASE_CONFIG.url,window.AU_SUPABASE_CONFIG.publishableKey);
+ refreshAuSession();
+ auClient.auth.onAuthStateChange((event,session)=>{
+  if(event==='SIGNED_OUT'||!session){showSignedOut('Sesión cerrada.');return}
+  if(event==='SIGNED_IN'||event==='TOKEN_REFRESHED')setTimeout(()=>refreshAuSession(),0);
+ });
+}else{
+ showSignedOut('No se pudo inicializar Supabase. Revisa la configuración y la conexión a internet.');
+}
+authForm.addEventListener('submit',async event=>{
+ event.preventDefault();
+ if(!auClient)return;
+ loginButton.disabled=true;authStatus('Verificando credenciales…');
+ const email=$('auth-email').value.trim(),password=$('auth-password').value;
+ const {data,error}=await auClient.auth.signInWithPassword({email,password});
+ loginButton.disabled=false;
+ if(error){authStatus('No se pudo iniciar sesión: '+error.message);return}
+ $('auth-password').value='';
+ try{await loadAuIdentity(data.user)}
+ catch(e){authStatus('Sesión iniciada, pero falta configurar el acceso de AU: '+e.message)}
+});
+logoutButton.addEventListener('click',async()=>{
+ logoutButton.disabled=true;
+ const {error}=await auClient.auth.signOut();
+ logoutButton.disabled=false;
+ if(error)authStatus('No se pudo cerrar sesión: '+error.message);
+});
 const API='https://xaus.com/api/v1/spot?currency=HNL&unit=gram&compact=1';
 const fmt=n=>new Intl.NumberFormat('es-HN',{style:'currency',currency:'HNL',minimumFractionDigits:2,maximumFractionDigits:2}).format(n);
 const $=id=>document.getElementById(id);
