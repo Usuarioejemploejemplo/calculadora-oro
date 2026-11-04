@@ -1,4 +1,4 @@
-const CACHE='au-gestion-v2';
+const CACHE='au-gestion-v3';
 const FILES=['./','./manifest.webmanifest','./icon.svg'];
 
 self.addEventListener('install',event=>{
