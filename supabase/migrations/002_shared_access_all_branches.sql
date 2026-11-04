@@ -1,6 +1,7 @@
--- AU · Acceso compartido entre sucursales para todos los miembros activos.
+-- AU · Acceso compartido entre las dos cuentas administradoras.
 -- Ejecutar después de 001_phase1_purchases.sql.
--- La autenticación individual se conserva; el aislamiento entre organizaciones también.
+-- Los administradores activos acceden a todas las sucursales de su organización.
+-- Los demás usuarios conservan el acceso limitado a sus sucursales asignadas.
 
 create or replace function public.can_access_branch(target_branch uuid)
 returns boolean
@@ -14,21 +15,29 @@ as $$
       on p.organization_id = b.organization_id
      and p.user_id = (select auth.uid())
      and p.is_active = true
+    left join public.branch_memberships bm
+      on bm.branch_id = b.id
+     and bm.user_id = p.user_id
     where b.id = target_branch
       and b.is_active = true
+      and (p.role in ('owner','admin') or bm.user_id is not null)
   );
 $$;
 
 revoke all on function public.can_access_branch(uuid) from public, anon;
 grant execute on function public.can_access_branch(uuid) to authenticated;
 
--- Todos los miembros activos pueden ver todas las sucursales de su organización.
+-- Los administradores pueden ver todas las sucursales de la organización;
+-- los demás usuarios solo ven sucursales a las que pertenecen.
 drop policy if exists branches_read_org on public.branches;
 create policy branches_read_org on public.branches
 for select to authenticated
-using (public.is_org_member(organization_id));
+using (
+  public.has_org_role(organization_id, array['owner','admin'])
+  or public.can_access_branch(id)
+);
 
--- Los perfiles de ambos administradores se pueden consultar dentro de la organización.
+-- Los administradores pueden consultar perfiles dentro de su organización.
 drop policy if exists profiles_read_self_or_managers on public.user_profiles;
 create policy profiles_read_self_or_managers on public.user_profiles
 for select to authenticated
@@ -37,5 +46,5 @@ using (
   or public.has_org_role(organization_id, array['owner','admin','manager'])
 );
 
--- Nota: para que las dos cuentas tengan idénticos permisos administrativos,
--- ambas deben tener role='admin' en user_profiles y estar activas.
+-- Para permisos idénticos, las dos cuentas deben tener role='admin'
+-- y is_active=true en public.user_profiles.
